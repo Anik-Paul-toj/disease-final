@@ -30,10 +30,11 @@ X_test[['Age', 'Disease Duration (days)']] = scaler.transform(X_test[['Age', 'Di
 model = RandomForestClassifier(random_state=42)
 model.fit(X_train, y_train)
 
-# Save model, encoder, and scaler
+# Save model, encoder, scaler, and feature names
 joblib.dump(model, 'random_forest_model.pkl')
 joblib.dump(encoder, 'encoder.pkl')
 joblib.dump(scaler, 'scaler.pkl')
+joblib.dump(X.columns.tolist(), 'model_features.pkl')
 
 # Evaluate model
 print("Model accuracy:", model.score(X_test, y_test))
