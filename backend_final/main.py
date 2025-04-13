@@ -4,6 +4,7 @@ import joblib
 import pandas as pd
 from typing import List
 import uvicorn 
+import os
 
 app = FastAPI()
 
@@ -172,7 +173,6 @@ disease_to_medications = {
     }
 }
 
-
 # Request schema
 class DiseasePredictionRequest(BaseModel):
     age: int
@@ -191,8 +191,14 @@ def validate_input(data):
         raise HTTPException(status_code=400, detail="Age and duration must be positive.")
     if data.gender not in ["Male", "Female"]:
         raise HTTPException(status_code=400, detail="Gender must be 'Male' or 'Female'.")
-    if not data.symptoms or any(s not in valid_symptoms for s in data.symptoms):
-        raise HTTPException(status_code=400, detail=f"Invalid or missing symptoms. Valid ones include: {', '.join(valid_symptoms)}")
+    
+    # Check for invalid symptoms
+    invalid_symptoms = [s for s in data.symptoms if s not in valid_symptoms]
+    if invalid_symptoms:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid or missing symptoms. The following symptoms are invalid: {', '.join(invalid_symptoms)}. Valid symptoms include: {', '.join(valid_symptoms)}."
+        )
 
 # Endpoint
 @app.post("/predict")
@@ -243,6 +249,8 @@ def predict_disease(request: DiseasePredictionRequest):
         "medications": disease_info["medications"],
         "consult_doctor": disease_info["consult"]
     }
-    if __name__ == "__main__":
-        port = int(os.environ.get("PORT", 8000))  # default to 8000 if not set
-        uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+
+# Run the app (uncomment the following to run locally)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # default to 8000 if not set
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
