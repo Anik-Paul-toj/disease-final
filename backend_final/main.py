@@ -3,6 +3,7 @@ from pydantic import BaseModel, root_validator
 import joblib
 import pandas as pd
 from typing import List
+import uvicorn 
 
 app = FastAPI()
 
@@ -100,5 +101,5 @@ def predict_disease(request: DiseasePredictionRequest):
         "consult_doctor": disease_info["consult"]
     }
     if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # default to 8000 if not set
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+        port = int(os.environ.get("PORT", 8000))  # default to 8000 if not set
+        uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
