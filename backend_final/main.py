@@ -4,28 +4,24 @@ import joblib
 import pandas as pd
 import numpy as np
 
-# Initialize FastAPI app
 app = FastAPI()
 
-# Load the model, encoder, and scaler
+# Load artifacts
 model = joblib.load('random_forest_model.pkl')
 encoder = joblib.load('encoder.pkl')
 scaler = joblib.load('scaler.pkl')
+model_features = joblib.load('model_features.pkl')
 
-# Load the dataset from data.py
+# Load dataset
 dataset = pd.read_csv("updated_medical_dataset.csv")
 
-# Extract symptoms from the dataset (assuming 'Symptoms' column contains symptoms)
+# Extract unique symptoms
 valid_symptoms = set()
-
-# Iterate over the rows and add symptoms to the valid_symptoms set
 for symptoms in dataset['Symptoms']:
     valid_symptoms.update(symptom.strip() for symptom in symptoms.split(','))
-
-# Convert the set back to a list for easy iteration
 valid_symptoms = list(valid_symptoms)
 
-# Define a dictionary for medications based on diseases
+# Medication mapping
 disease_to_medications = {
     "Flu": {"medications": ["Paracetamol 500mg", "Antihistamine 10mg"], "consult": "No"},
     "Diabetes": {"medications": ["Metformin 500mg", "Insulin 10 units"], "consult": "Yes"},
@@ -53,76 +49,72 @@ disease_to_medications = {
     "Tuberculosis": {"medications": ["Isoniazid 300mg", "Rifampicin 600mg"], "consult": "Yes"}
 }
 
-# Define input data structure
+# Input schema
 class DiseasePredictionRequest(BaseModel):
     age: int
     gender: str
     duration: int
     symptoms: list
 
-# Function to validate input
+# Input validation
 def validate_input(data):
     if data.age <= 0 or data.duration <= 0:
-        raise HTTPException(status_code=400, detail="Age and duration must be positive integers.")
-    
-    valid_genders = ["Male", "Female"]
-    if data.gender not in valid_genders:
+        raise HTTPException(status_code=400, detail="Age and duration must be positive.")
+    if data.gender not in ["Male", "Female"]:
         raise HTTPException(status_code=400, detail="Gender must be 'Male' or 'Female'.")
-    
-    if not data.symptoms or any(symptom.strip() not in valid_symptoms for symptom in data.symptoms):
-        raise HTTPException(status_code=400, detail="Symptoms contain invalid or missing data.")
+    if not data.symptoms or any(s not in valid_symptoms for s in data.symptoms):
+        raise HTTPException(status_code=400, detail="Invalid or missing symptoms.")
 
-# Define prediction endpoint
+# Prediction endpoint
 @app.post("/predict")
 def predict_disease(request: DiseasePredictionRequest):
-    # Validate input
     validate_input(request)
-    
-    # Prepare input features
+
+    # Prepare input DataFrame
     symptoms_str = ', '.join(sorted(request.symptoms))
-    input_data = {
+    input_df = pd.DataFrame({
         'Age': [request.age],
         'Gender': [request.gender],
         'Disease Duration (days)': [request.duration],
         'Symptoms': [symptoms_str]
-    }
-    
-    # Convert to DataFrame
-    input_df = pd.DataFrame(input_data)
-    
-    # Encode and scale
+    })
+
+    # Encode gender
     input_df['Gender'] = encoder.transform(input_df['Gender'])
-    input_df = pd.get_dummies(input_df, columns=['Symptoms'], prefix='Symptom')
-    
-    # Ensure all expected symptom columns are present
-    expected_columns = [col for col in model.feature_names_in_ if col.startswith('Symptom_')]
-    for col in expected_columns:
-        if col not in input_df.columns:
-            input_df[col] = 0
-    input_df = input_df[model.feature_names_in_]
-    
-    input_df[['Age', 'Disease Duration (days)']] = scaler.transform(input_df[['Age', 'Disease Duration (days)']])
-    
-    # Make prediction
+
+    # One-hot encode symptoms
+    for symptom in valid_symptoms:
+        col_name = f'Symptom_{symptom}'
+        input_df[col_name] = 1 if symptom in request.symptoms else 0
+
+    # Ensure correct column order and fill missing
+    input_df = input_df.reindex(columns=model_features, fill_value=0)
+
+    # Scale numeric features
+    input_df[['Age', 'Disease Duration (days)']] = scaler.transform(
+        input_df[['Age', 'Disease Duration (days)']]
+    )
+
+    # Prediction
     prediction = model.predict(input_df)
-    prediction_prob = model.predict_proba(input_df)
-    
-    # Get top predictions
-    top_predictions = sorted(zip(model.classes_, prediction_prob[0]), key=lambda x: x[1], reverse=True)[:5]
-    
+    probabilities = model.predict_proba(input_df)[0]
     predicted_disease = prediction[0]
-    predicted_prob = prediction_prob[0][np.where(model.classes_ == predicted_disease)][0]
-    
-    # Get corresponding medications and consultation advice for the predicted disease
-    disease_info = disease_to_medications.get(predicted_disease, {"medications": ["No specific medications found"], "consult": "Yes"})
-    
-    # Prepare response
-    response = {
+    predicted_prob = round(probabilities[model.classes_.tolist().index(predicted_disease)], 2)
+
+    # Top 5 predictions
+    top_preds = sorted(zip(model.classes_, probabilities), key=lambda x: x[1], reverse=True)[:5]
+    top_predictions = [{"disease": d, "probability": round(p, 2)} for d, p in top_preds]
+
+    # Medication recommendation
+    disease_info = disease_to_medications.get(predicted_disease, {
+        "medications": ["No specific medications found"],
+        "consult": "Yes"
+    })
+
+    return {
         "predicted_disease": predicted_disease,
-        "probability": round(predicted_prob, 2),
-        "top_predictions": [{"disease": disease, "probability": round(prob, 2)} for disease, prob in top_predictions],
+        "probability": predicted_prob,
+        "top_predictions": top_predictions,
         "medications": disease_info["medications"],
         "consult_doctor": disease_info["consult"]
     }
-    
-    return response
