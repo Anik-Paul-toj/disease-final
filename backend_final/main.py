@@ -211,7 +211,7 @@ def predict_disease(request: DiseasePredictionRequest):
         'Age': [request.age],
         'Gender': [request.gender],
         'Disease Duration (days)': [request.duration],
-        'Symptoms': [symptoms_str]
+        'Symptoms': [symptoms_str.lower()]
     })
 
     # Encode gender
