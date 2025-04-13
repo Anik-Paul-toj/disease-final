@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+gunicorn
+joblib
+pandas
+numpy
+scikit-learn==1.5.1
+
